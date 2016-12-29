@@ -17,6 +17,10 @@ mod hash;
 use std::env::args;
 use std::process::{self, Command, ExitStatus};
 use std::path::Path;
+use std::fs;
+use std::io::Write;
+
+const SCRIPT_BIN_PATH: &'static str = "target/release/rustscript";
 
 fn main() {
     if let Err(ref e) = run() {
@@ -40,10 +44,11 @@ fn run() -> Result<()> {
     let hash = hash::hash(&script_path).chain_err(|| "Unable to take signature of script")?;
 
     let cache = cache::BinCache::new()?;
-    let script_bin_path = cache.get(hash);
+    let script_cache_dir = cache.get(hash)?;
+    let script_bin_path = script_cache_dir.join(SCRIPT_BIN_PATH);
     if !script_bin_path.exists() {
         println!("Script not found in cache, compiling");
-        compile(&script_path, &script_bin_path).chain_err(|| "Unable to compile the script")?;
+        compile(&script_path, &script_cache_dir).chain_err(|| "Unable to compile the script")?;
     }
 
     println!("Running {} with {:?}", &script_path, script_args);
@@ -69,14 +74,30 @@ fn terminate_like_script(exit_status: ExitStatus) -> ! {
     });
 }
 
+fn compile<P: AsRef<Path>, Q: AsRef<Path>>(script_path: P, cache_dir: Q) -> Result<()> {
+    let script_path = script_path.as_ref();
+    let cache_dir = cache_dir.as_ref();
+    let src_dir = cache_dir.join("src");
+    if !src_dir.exists() {
+        fs::create_dir(&src_dir).chain_err(|| "unable to create src dir")?;
+    }
+    let main_path = src_dir.join("main.rs");
+    fs::copy(script_path, &main_path).chain_err(|| "Unable to copy script to main.rs")?;
 
-fn compile<P: AsRef<Path>, P2: AsRef<Path>>(script_path: P, output_path: P2) -> Result<()> {
-    let mut rustc = Command::new("rustc").arg(script_path.as_ref())
-        .arg("-o")
-        .arg(output_path.as_ref())
+    let toml = "[package]
+        name = \"rustscript\"
+        version = \"0.0.0\"
+        ";
+    let mut toml_f =
+        fs::File::create(cache_dir.join("Cargo.toml")).chain_err(|| "Unable to create Cargo.toml")?;
+    toml_f.write_all(toml.as_bytes()).chain_err(|| "Unable to write to Cargo.toml")?;
+
+    let mut rustc = Command::new("cargo").arg("build")
+        .arg("--release")
+        .current_dir(cache_dir)
         .spawn()
-        .chain_err(|| "Unable to spawn rustc")?;
-    let rustc_result = rustc.wait().chain_err(|| "rustc crashed")?;
+        .chain_err(|| "Unable to start the compiler")?;
+    let rustc_result = rustc.wait().chain_err(|| "cargo crashed")?;
     if !rustc_result.success() {
         bail!("rustc did not build successfully")
     } else {
