@@ -15,7 +15,7 @@ mod cache;
 mod hash;
 
 use std::env::args;
-use std::process::{self, Command};
+use std::process::{self, Command, ExitStatus};
 use std::path::Path;
 
 fn main() {
@@ -52,8 +52,23 @@ fn run() -> Result<()> {
         .spawn()
         .chain_err(|| "Unable to spawn script")?;
     let script_result = script_process.wait().chain_err(|| "Script crashed")?;
-    process::exit(script_result.code().unwrap());
+    terminate_like_script(script_result);
 }
+
+#[cfg(not(unix))]
+fn terminate_like_script(exit_status: ExitStatus) -> ! {
+    process::exit(exit_status.code().unwrap());
+}
+
+#[cfg(unix)]
+fn terminate_like_script(exit_status: ExitStatus) -> ! {
+    use std::os::unix::process::ExitStatusExt;
+    process::exit(match exit_status.code() {
+        Some(i) => i,
+        None => exit_status.signal().unwrap(),
+    });
+}
+
 
 fn compile<P: AsRef<Path>, P2: AsRef<Path>>(script_path: P, output_path: P2) -> Result<()> {
     let mut rustc = Command::new("rustc").arg(script_path.as_ref())
