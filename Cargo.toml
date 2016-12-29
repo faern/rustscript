@@ -7,3 +7,5 @@ authors = ["Linus Färnstrand <faern@faern.net>"]
 app_dirs = "~1.1"
 rust-crypto = "~0.2"
 error-chain = "~0.7"
+syntex_syntax = "0.52"
+syntex_errors = "0.52"
