@@ -20,7 +20,7 @@ use std::path::Path;
 use std::fs;
 use std::io::Write;
 
-const SCRIPT_BIN_PATH: &'static str = "target/release/rustscript";
+const SCRIPT_BIN_PATH: &'static str = "target/release/bin";
 
 fn main() {
     if let Err(ref e) = run() {
@@ -76,6 +76,10 @@ fn terminate_like_script(exit_status: ExitStatus) -> ! {
 
 fn compile<P: AsRef<Path>, Q: AsRef<Path>>(script_path: P, cache_dir: Q) -> Result<()> {
     let script_path = script_path.as_ref();
+    let script_name = script_path.file_name()
+        .ok_or("Script has no name")?
+        .to_str()
+        .ok_or("Script name is not valid utf-8")?;
     let cache_dir = cache_dir.as_ref();
     let src_dir = cache_dir.join("src");
     if !src_dir.exists() {
@@ -84,10 +88,13 @@ fn compile<P: AsRef<Path>, Q: AsRef<Path>>(script_path: P, cache_dir: Q) -> Resu
     let main_path = src_dir.join("main.rs");
     fs::copy(script_path, &main_path).chain_err(|| "Unable to copy script to main.rs")?;
 
-    let toml = "[package]
-        name = \"rustscript\"
+    let toml = format!("[package]
+        name = \"{}\"
         version = \"0.0.0\"
-        ";
+        [[bin]]
+        name = \"bin\"
+    ",
+                       script_name.replace('.', "_"));
     let mut toml_f =
         fs::File::create(cache_dir.join("Cargo.toml")).chain_err(|| "Unable to create Cargo.toml")?;
     toml_f.write_all(toml.as_bytes()).chain_err(|| "Unable to write to Cargo.toml")?;
