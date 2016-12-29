@@ -1,12 +1,9 @@
 use std::path::Path;
 use std::fs;
-use std::io::{self, Write};
+use std::io::{self, Write, BufReader, BufRead};
 use std::process::{Command, Stdio};
 
 use {Result, ResultExt};
-
-use syntex_syntax::parse::{self, ParseSess};
-use syntex_syntax::ast::{ItemKind, Crate};
 
 pub fn build_script_crate<P: AsRef<Path>, Q: AsRef<Path>>(script_path: P,
                                                           output_crate_dir: Q)
@@ -28,32 +25,10 @@ pub fn build_script_crate<P: AsRef<Path>, Q: AsRef<Path>>(script_path: P,
     compile(output_crate_dir)
 }
 
-fn parse_crate<P: AsRef<Path>>(path: P) -> Result<Crate> {
-    let parse_session = ParseSess::new();
-    let result = parse::parse_crate_from_file(path.as_ref(), &parse_session);
-    result.map_err(|mut e| {
-            e.cancel();
-            io::Error::new(io::ErrorKind::Other,
-                           e.into_diagnostic().message().to_owned())
-        })
-        .chain_err(|| "Unable to parse script")
-}
-
-fn list_extern_crates(crate_: &Crate) -> Result<Vec<String>> {
-    let mut crates = Vec::new();
-    for item in &crate_.module.items {
-        if let ItemKind::ExternCrate(..) = item.node {
-            crates.push(format!("{}", item.ident.name.as_str()));
-        }
-    }
-    Ok(crates)
-}
-
 fn create_toml<P: AsRef<Path>>(script_name: &str, project_dir: P) -> Result<()> {
     let project_dir = project_dir.as_ref();
     let main_path = project_dir.join("src").join("main.rs");
-    let parsed_crate = parse_crate(main_path)?;
-    let extern_crates = list_extern_crates(&parsed_crate)?;
+    let extern_crates = list_extern_crates(&main_path)?;
     let toml = format!("[package]
         name = \"{}\"
         version = \"0.0.0\"
@@ -68,6 +43,22 @@ fn create_toml<P: AsRef<Path>>(script_name: &str, project_dir: P) -> Result<()> 
         fs::File::create(project_dir.join("Cargo.toml")).chain_err(|| "Unable to create Cargo.toml")?;
     toml_f.write_all(toml.as_bytes()).chain_err(|| "Unable to write to Cargo.toml")?;
     Ok(())
+}
+
+fn list_extern_crates<P: AsRef<Path>>(script_path: P) -> Result<Vec<String>> {
+    let script_path = script_path.as_ref();
+    let f = fs::File::open(script_path).chain_err(|| "Unable to read script")?;
+    let buf_f = BufReader::new(f);
+    let mut crates = Vec::new();
+    for line in buf_f.lines() {
+        let line = line.chain_err(|| "Unable to read script")?;
+        let parts: Vec<String> = line.trim().split_whitespace().map(|s| s.to_owned()).collect();
+        if parts.len() == 3 && ["extern", "crate"] == parts[..2] && parts[2].ends_with(";") {
+            let crate_name = parts[2].trim_right_matches(';').to_owned();
+            crates.push(crate_name);
+        }
+    }
+    Ok(crates)
 }
 
 fn extern_crates_to_toml_format(crates: &[String]) -> String {

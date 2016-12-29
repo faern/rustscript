@@ -6,9 +6,6 @@ extern crate crypto;
 #[macro_use]
 extern crate error_chain;
 
-extern crate syntex_syntax;
-extern crate syntex_errors;
-
 mod errors {
     error_chain!{}
 }
