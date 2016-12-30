@@ -6,6 +6,7 @@ extern crate crypto;
 #[macro_use]
 extern crate error_chain;
 extern crate regex;
+extern crate semver;
 
 mod errors {
     error_chain!{}
