@@ -21,6 +21,9 @@ mod runner;
 mod scriptbuilder;
 
 use clap::{App, Arg, AppSettings};
+use std::path::Path;
+use std::fs::File;
+use std::io::{Read, Write};
 
 const SCRIPT_BIN_PATH: &'static str = "target/release/bin";
 
@@ -46,18 +49,36 @@ fn run() -> Result<()> {
     let script_path = matches.value_of("script_path").unwrap();
     let script_args = values_t!(matches, "script_args", String).unwrap();
 
-    let hash = hash::hash(&script_path).chain_err(|| "Unable to take signature of script")?;
+    let (path_hash, script_hash) =
+        hash::hash_script(&script_path).chain_err(|| "Unable to take signature of script")?;
 
     let cache = cache::BinCache::new()?;
-    let script_cache_dir = cache.get(hash)?;
+    let script_cache_dir = cache.get(path_hash)?;
+    let script_hash_path = script_cache_dir.join("script_hash");
+    let cached_script_hash = file_to_string(&script_hash_path).unwrap_or(String::new());
     let script_bin_path = script_cache_dir.join(SCRIPT_BIN_PATH);
-    if !script_bin_path.exists() || recompile {
+    if !script_bin_path.exists() || recompile || script_hash != cached_script_hash {
         scriptbuilder::build_script_crate(&script_path, &script_cache_dir, verbosity_level > 0).chain_err(|| "Unable to compile the script")?;
+        string_to_file(&script_hash_path, &script_hash)?
     }
     if !no_run {
         runner::run_script(&script_bin_path, script_args)?;
     }
     Ok(())
+}
+
+fn file_to_string<P: AsRef<Path>>(path: P) -> Result<String> {
+    let path = path.as_ref();
+    let mut f = File::open(path).chain_err(|| format!("Unable to open {:?}", path))?;
+    let mut buffer = String::new();
+    f.read_to_string(&mut buffer).chain_err(|| "Unable to read script")?;
+    Ok(buffer)
+}
+
+fn string_to_file<P: AsRef<Path>>(path: P, data: &str) -> Result<()> {
+    let path = path.as_ref();
+    let mut f = File::create(path).chain_err(|| format!("Unable to create {:?}", path))?;
+    f.write_all(data.as_bytes()).chain_err(|| format!("Unable to write {:?}", path))
 }
 
 fn create_app() -> App<'static, 'static> {

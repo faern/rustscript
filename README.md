@@ -8,3 +8,4 @@ Use Rust as a scripting language.
   * std::io::*;
   * std::fmt::*;
   * std::path::*;
+* Don't throw out cache on every script change
