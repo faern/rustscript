@@ -11,22 +11,24 @@ use {Result, ResultExt};
 #[derive(Debug)]
 struct CrateImport {
     name: String,
+    package_name: String,
     version: String,
     macro_use: bool,
 }
 
 impl CrateImport {
-    pub fn new(name: &str, version: &str, macro_use: bool) -> Result<Self> {
+    pub fn new(name: &str, package_name: &str, version: &str, macro_use: bool) -> Result<Self> {
         VersionReq::parse(version).chain_err(|| format!("Invalid semver: {}", version))?;
         Ok(CrateImport {
             name: name.to_owned(),
+            package_name: package_name.to_owned(),
             version: version.to_owned(),
             macro_use: macro_use,
         })
     }
 
     pub fn to_cargo_toml_format(&self) -> String {
-        format!("{} = \"{}\"", self.name, self.version)
+        format!("{} = \"{}\"", self.package_name, self.version)
     }
 
     pub fn to_code_format(&self) -> String {
@@ -112,10 +114,6 @@ fn remove_shebang(code: &str) -> &str {
     &code[start..]
 }
 
-fn indent(code: &str) -> String {
-    code.replace('\n', "\n    ")
-}
-
 fn extract_extern_crates(code: &str) -> Result<(Vec<CrateImport>, String)> {
     let regex = create_extern_crate_regex();
     let mut crates = Vec::new();
@@ -124,10 +122,10 @@ fn extract_extern_crates(code: &str) -> Result<(Vec<CrateImport>, String)> {
     for capture in regex.captures_iter(&code) {
         let macro_use = capture.name("macro_use").is_some();
         let name = capture.name("name").unwrap();
+        let package_name = capture.name("package_name").unwrap_or(name);
         let version = capture.name("version").unwrap_or("*");
-        let crate_ = CrateImport::new(name, version, macro_use)
+        let crate_ = CrateImport::new(name, package_name, version, macro_use)
             .chain_err(|| "Unable to parse extern crate statement")?;
-        println!("found crate: {:?}", &crate_);
         crates.push(crate_);
 
         let (start, end) = capture.pos(0).unwrap();
@@ -141,7 +139,7 @@ fn extract_extern_crates(code: &str) -> Result<(Vec<CrateImport>, String)> {
 fn create_extern_crate_regex() -> Regex {
     let macro_regex = r"(?P<macro_use>#\[macro_use\])?";
     let crate_name_regex = r"(?P<name>[^; \[]+)";
-    let crate_version_regex = r"(?:\[(?P<version>[^\]]+)\])?";
+    let crate_version_regex = r"(?:\[(?:(?P<package_name>[^; ]+);)?(?P<version>[^\]]+)\])?";
     let regex = Regex::new(&format!(r"{}\s*extern\s+crate\s+{}{};",
                                     macro_regex,
                                     crate_name_regex,

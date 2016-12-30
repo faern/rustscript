@@ -4,7 +4,6 @@ Use Rust as a scripting language.
 
 ## TODO
 
-* Specify extern crates with versions
 * Submodules - The main script can import other files
   * Is this desired? If your program is multiple files it might be an application, not a script.
     Use normal Rust.
