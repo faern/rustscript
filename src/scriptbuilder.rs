@@ -42,7 +42,8 @@ impl CrateImport {
 }
 
 pub fn build_script_crate<P: AsRef<Path>, Q: AsRef<Path>>(script_path: P,
-                                                          output_crate_dir: Q)
+                                                          output_crate_dir: Q,
+                                                          verbose: bool)
                                                           -> Result<()> {
     let script_path = script_path.as_ref();
     let script_name = script_path.file_name()
@@ -64,7 +65,7 @@ pub fn build_script_crate<P: AsRef<Path>, Q: AsRef<Path>>(script_path: P,
     output_f.write_all(formatted_code.as_bytes()).chain_err(|| "Unable to write main.rs")?;
 
     create_toml(&script_name, &crates, &output_crate_dir)?;
-    compile(output_crate_dir)
+    compile(output_crate_dir, verbose)
 }
 
 fn create_toml<P: AsRef<Path>>(script_name: &str,
@@ -156,14 +157,17 @@ fn read_file<P: AsRef<Path>>(path: P) -> Result<String> {
     Ok(content)
 }
 
-fn compile<P: AsRef<Path>>(project_dir: P) -> Result<()> {
-    let mut child = Command::new("cargo").arg("build")
+fn compile<P: AsRef<Path>>(project_dir: P, verbose: bool) -> Result<()> {
+    let mut command = Command::new("cargo");
+    command.arg("build")
         .arg("--release")
-        .current_dir(project_dir)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .chain_err(|| "Unable to start the compiler")?;
+        .current_dir(project_dir);
+    if verbose {
+        command.stdout(Stdio::inherit()).stderr(Stdio::inherit());
+    } else {
+        command.stdout(Stdio::piped()).stderr(Stdio::piped());
+    }
+    let mut child = command.spawn().chain_err(|| "Unable to start the compiler")?;
     let rustc_result = child.wait().chain_err(|| "cargo crashed")?;
     if !rustc_result.success() {
         io::copy(&mut child.stdout.unwrap(), &mut io::stdout())
