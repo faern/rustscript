@@ -1,9 +1,68 @@
 use std::path::Path;
 use std::fs;
-use std::io::{self, Write, BufReader, BufRead};
+use std::io::{self, Write, BufReader, BufRead, Read};
 use std::process::{Command, Stdio};
 
+use regex::Regex;
+
 use {Result, ResultExt};
+
+struct CrateImport {
+    name: String,
+    version: String,
+    macro_use: bool,
+}
+
+impl CrateImport {
+    pub fn new(name: &str, version: &str, macro_use: bool) -> Self {
+        CrateImport {
+            name: name.to_owned(),
+            version: version.to_owned(),
+            macro_use: macro_use,
+        }
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn version(&self) -> &str {
+        &self.version
+    }
+
+    pub fn macro_use(&self) -> bool {
+        self.macro_use
+    }
+
+    pub fn to_cargo_toml_format(&self) -> String {
+        format!("{} = \"{}\"", self.name, self.version)
+    }
+
+    pub fn to_code_format(&self) -> String {
+        let mut code = String::new();
+        if self.macro_use {
+            code.push_str("#[macro_use] ");
+        }
+        code.push_str(&format!("extern crate {};", self.name));
+        code
+    }
+}
+
+fn crates_to_code(crates: &[CrateImport]) -> String {
+    crates.iter().fold(String::new(), |mut acc, crate_| {
+        acc.push_str(&crate_.to_code_format());
+        acc.push_str("\n");
+        acc
+    })
+}
+
+fn crates_to_toml_format(crates: &[CrateImport]) -> String {
+    crates.iter().fold(String::new(), |mut acc, crate_| {
+        acc.push_str(&crate_.to_cargo_toml_format());
+        acc.push_str("\n");
+        acc
+    })
+}
 
 pub fn build_script_crate<P: AsRef<Path>, Q: AsRef<Path>>(script_path: P,
                                                           output_crate_dir: Q)
@@ -19,16 +78,23 @@ pub fn build_script_crate<P: AsRef<Path>, Q: AsRef<Path>>(script_path: P,
         fs::create_dir(&src_dir).chain_err(|| "unable to create src dir")?;
     }
     let main_path = src_dir.join("main.rs");
-    fs::copy(script_path, &main_path).chain_err(|| "Unable to copy script to main.rs")?;
 
-    create_toml(&script_name, &output_crate_dir)?;
+    let code = read_file(script_path)?;
+    let (crates, code) = extract_extern_crates(code)?;
+
+    let formatted_code = format_code(&crates, code);
+    let mut output_f = fs::File::create(main_path).chain_err(|| "Unable to write main.rs")?;
+    output_f.write_all(formatted_code.as_bytes()).chain_err(|| "Unable to write main.rs")?;
+
+    create_toml(&script_name, &crates, &output_crate_dir)?;
     compile(output_crate_dir)
 }
 
-fn create_toml<P: AsRef<Path>>(script_name: &str, project_dir: P) -> Result<()> {
+fn create_toml<P: AsRef<Path>>(script_name: &str,
+                               extern_crates: &[CrateImport],
+                               project_dir: P)
+                               -> Result<()> {
     let project_dir = project_dir.as_ref();
-    let main_path = project_dir.join("src").join("main.rs");
-    let extern_crates = list_extern_crates(&main_path)?;
     let toml = format!("[package]
         name = \"{}\"
         version = \"0.0.0\"
@@ -38,35 +104,57 @@ fn create_toml<P: AsRef<Path>>(script_name: &str, project_dir: P) -> Result<()> 
         {}
     ",
                        script_name.replace('.', "_"),
-                       extern_crates_to_toml_format(&extern_crates));
+                       crates_to_toml_format(extern_crates));
     let mut toml_f =
         fs::File::create(project_dir.join("Cargo.toml")).chain_err(|| "Unable to create Cargo.toml")?;
     toml_f.write_all(toml.as_bytes()).chain_err(|| "Unable to write to Cargo.toml")?;
     Ok(())
 }
 
-fn list_extern_crates<P: AsRef<Path>>(script_path: P) -> Result<Vec<String>> {
-    let script_path = script_path.as_ref();
-    let f = fs::File::open(script_path).chain_err(|| "Unable to read script")?;
-    let buf_f = BufReader::new(f);
-    let mut crates = Vec::new();
-    for line in buf_f.lines() {
-        let line = line.chain_err(|| "Unable to read script")?;
-        let parts: Vec<String> = line.trim().split_whitespace().map(|s| s.to_owned()).collect();
-        if parts.len() == 3 && ["extern", "crate"] == parts[..2] && parts[2].ends_with(";") {
-            let crate_name = parts[2].trim_right_matches(';').to_owned();
-            crates.push(crate_name);
-        }
-    }
-    Ok(crates)
+fn format_code(extern_crates: &[CrateImport], code: String) -> String {
+    format!("{}
+fn main() {{
+{}
+}}\n",
+            crates_to_code(extern_crates),
+            remove_shebang(&code).trim())
 }
 
-fn extern_crates_to_toml_format(crates: &[String]) -> String {
-    crates.into_iter().fold(String::new(), |mut acc, crate_name| {
-        acc.push_str(&crate_name);
-        acc.push_str(" = \"*\"\n");
-        acc
-    })
+fn remove_shebang(code: &str) -> &str {
+    let start = if code.starts_with("#!") {
+        code.find('\n').unwrap_or(code.len())
+    } else {
+        0
+    };
+    &code[start..]
+}
+
+fn extract_extern_crates(code: String) -> Result<(Vec<CrateImport>, String)> {
+    let regex =
+        Regex::new(r"(?P<macro_use>#\[macro_use\])?\s*extern\s+crate\s+(?P<crate_name>[^; ]+);")
+            .unwrap();
+    let mut crates = Vec::new();
+    let mut new_code = String::new();
+    let mut last_start = 0;
+    for capture in regex.captures_iter(&code) {
+        let macro_use = capture.name("macro_use").is_some();
+        let crate_name = capture.name("crate_name").unwrap();
+        crates.push(CrateImport::new(crate_name, "*", macro_use));
+
+        let (start, end) = capture.pos(0).unwrap();
+        new_code.push_str(&code[last_start..start]);
+        last_start = end;
+    }
+    new_code.push_str(&code[last_start..]);
+    Ok((crates, new_code))
+}
+
+fn read_file<P: AsRef<Path>>(path: P) -> Result<String> {
+    let path = path.as_ref();
+    let mut f = fs::File::open(path).chain_err(|| "Unable to read file")?;
+    let mut content = String::new();
+    f.read_to_string(&mut content).chain_err(|| "Unable to read file")?;
+    Ok(content)
 }
 
 fn compile<P: AsRef<Path>>(project_dir: P) -> Result<()> {

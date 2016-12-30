@@ -5,6 +5,7 @@ extern crate app_dirs;
 extern crate crypto;
 #[macro_use]
 extern crate error_chain;
+extern crate regex;
 
 mod errors {
     error_chain!{}
