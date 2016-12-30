@@ -5,8 +5,12 @@ use {Result, ResultExt};
 
 pub fn run_script<P: AsRef<Path>>(script_bin_path: P, args: Vec<String>) -> Result<()> {
     let cmd_path = script_bin_path.as_ref();
-    let mut script_process = Command::new(cmd_path).args(&args)
-        .spawn()
+    let mut command = Command::new(cmd_path);
+    if !args.is_empty() {
+        println!("Using arguments: {:?}", &args);
+        command.args(&args);
+    }
+    let mut script_process = command.spawn()
         .chain_err(|| "Unable to spawn script")?;
     let script_result = script_process.wait().chain_err(|| "Script crashed")?;
     terminate_like_script(script_result);

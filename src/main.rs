@@ -47,7 +47,7 @@ fn run() -> Result<()> {
     let recompile = matches.is_present("recompile");
     let no_run = matches.is_present("no_run");
     let script_path = matches.value_of("script_path").unwrap();
-    let script_args = values_t!(matches, "script_args", String).unwrap();
+    let script_args = values_t!(matches, "script_args", String).unwrap_or(Vec::new());
 
     let (path_hash, script_hash) =
         hash::hash_script(&script_path).chain_err(|| "Unable to take signature of script")?;
@@ -96,8 +96,8 @@ fn create_app() -> App<'static, 'static> {
         .help("Don't run the script, only compile it. Add --recompile to compile even if it is \
                in the cache.");
     let script_path_arg = Arg::with_name("script_path").index(1).required(true);
-    let script_args_arg = Arg::with_name("script_args").index(2).multiple(true).default_value("");
-    App::new("rustscript")
+    let script_args_arg = Arg::with_name("script_args").index(2).multiple(true);
+    App::new(env!("CARGO_PKG_NAME"))
         .author(crate_authors!())
         .version(crate_version!())
         .settings(&[AppSettings::TrailingVarArg])

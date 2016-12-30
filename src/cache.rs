@@ -6,8 +6,8 @@ use std::fs;
 use {ResultExt, Result};
 
 const APP_INFO: AppInfo = AppInfo {
-    name: "rustscript",
-    author: "33c3",
+    name: env!("CARGO_PKG_NAME"),
+    author: env!("CARGO_PKG_NAME"),
 };
 
 pub struct BinCache {
