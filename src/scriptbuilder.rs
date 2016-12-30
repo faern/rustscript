@@ -1,12 +1,13 @@
 use std::path::Path;
 use std::fs;
-use std::io::{self, Write, BufReader, BufRead, Read};
+use std::io::{self, Write, Read};
 use std::process::{Command, Stdio};
 
 use regex::Regex;
 
 use {Result, ResultExt};
 
+#[derive(Debug)]
 struct CrateImport {
     name: String,
     version: String,
@@ -20,18 +21,6 @@ impl CrateImport {
             version: version.to_owned(),
             macro_use: macro_use,
         }
-    }
-
-    pub fn name(&self) -> &str {
-        &self.name
-    }
-
-    pub fn version(&self) -> &str {
-        &self.version
-    }
-
-    pub fn macro_use(&self) -> bool {
-        self.macro_use
     }
 
     pub fn to_cargo_toml_format(&self) -> String {
@@ -134,16 +123,24 @@ fn indent(code: &str) -> String {
 }
 
 fn extract_extern_crates(code: String) -> Result<(Vec<CrateImport>, String)> {
-    let regex =
-        Regex::new(r"(?P<macro_use>#\[macro_use\])?\s*extern\s+crate\s+(?P<crate_name>[^; ]+);")
-            .unwrap();
+    let macro_regex = r"(?P<macro_use>#\[macro_use\])?";
+    let crate_name_regex = r"(?P<name>[^; \[]+)";
+    let crate_version_regex = r"(?:\[(?P<version>[^\]]+)\])?";
+    let regex = Regex::new(&format!(r"{}\s*extern\s+crate\s+{}{};",
+                                    macro_regex,
+                                    crate_name_regex,
+                                    crate_version_regex))
+        .unwrap();
     let mut crates = Vec::new();
     let mut new_code = String::new();
     let mut last_start = 0;
     for capture in regex.captures_iter(&code) {
         let macro_use = capture.name("macro_use").is_some();
-        let crate_name = capture.name("crate_name").unwrap();
-        crates.push(CrateImport::new(crate_name, "*", macro_use));
+        let name = capture.name("name").unwrap();
+        let version = capture.name("version").unwrap_or("*");
+        let crate_ = CrateImport::new(name, version, macro_use);
+        println!("found crate: {:?}", &crate_);
+        crates.push(crate_);
 
         let (start, end) = capture.pos(0).unwrap();
         new_code.push_str(&code[last_start..start]);
