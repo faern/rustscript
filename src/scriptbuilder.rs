@@ -114,10 +114,10 @@ fn create_toml<P: AsRef<Path>>(script_name: &str,
 fn format_code(extern_crates: &[CrateImport], code: String) -> String {
     format!("{}
 fn main() {{
-{}
+    {}
 }}\n",
             crates_to_code(extern_crates),
-            remove_shebang(&code).trim())
+            indent(remove_shebang(&code).trim()))
 }
 
 fn remove_shebang(code: &str) -> &str {
@@ -127,6 +127,10 @@ fn remove_shebang(code: &str) -> &str {
         0
     };
     &code[start..]
+}
+
+fn indent(code: &str) -> String {
+    code.replace('\n', "\n    ")
 }
 
 fn extract_extern_crates(code: String) -> Result<(Vec<CrateImport>, String)> {
