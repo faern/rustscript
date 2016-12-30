@@ -91,6 +91,7 @@ fn create_app() -> App<'static, 'static> {
         .long("recompile")
         .help("Force the script to be compiled, even if it is already in the cache");
     let no_run_arg = Arg::with_name("no_run")
+        .short("n")
         .long("no-run")
         .help("Don't run the script, only compile it. Add --recompile to compile even if it is \
                in the cache.");
