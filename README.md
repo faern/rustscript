@@ -81,6 +81,11 @@ can make `rustscript` output the result of the script compilation even on succes
 
 `$ rustscript -v ./my_rust_pinger.rsc`
 
+## Platform support
+
+The idea is to support all major platforms, but because this is in an initial state only Linux
+has been tested so far.
+
 ## Ideas for the future
 
 * Automatic imports of large parts of stdlib for convenience
