@@ -2,6 +2,11 @@
 name = "rustscript"
 version = "0.1.0"
 authors = ["Linus Färnstrand <faern@faern.net>", "Simon Andersson <simonasker@posteo.net>"]
+license = "MIT/Apache-2.0"
+homepage = "https://github.com/faern/rustscript"
+repository = "https://github.com/faern/rustscript"
+description = "Use Rust as a scripting language"
+readme = "README.md"
 
 [dependencies]
 app_dirs = "~1.1"
